@@ -196,7 +196,7 @@ async def run_schedule():
         await asyncio.sleep(1)
 
 # === Основной запуск ===
-def main():
+async def main():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Обработчики команд
@@ -217,11 +217,8 @@ def main():
     # Расписание для отправки ежедневного отчёта
     schedule.every().day.at("22:00").do(send_daily_report)
 
-    async def run():
-        asyncio.create_task(run_schedule())
-        await application.run_polling()
-
-    asyncio.run(run())
+    # Асинхронный запуск
+    await asyncio.gather(application.run_polling(), run_schedule())
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

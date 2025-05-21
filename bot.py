@@ -3,7 +3,7 @@ import openai
 import logging
 import requests
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import schedule
@@ -35,7 +35,7 @@ if not UNSPLASH_ACCESS_KEY:
 bot = Bot(token=TELEGRAM_TOKEN)
 
 # === Только ты можешь управлять ботом ===
-MY_USER_ID = 375047802  # ← Заменить на свой Telegram ID
+MY_USER_ID = 375047802  # ← ЗАМЕНИ на свой Telegram ID!
 
 def is_authorized(update: Update) -> bool:
     return update.effective_user and update.effective_user.id == MY_USER_ID
@@ -47,7 +47,6 @@ openai.api_base = "https://openrouter.ai/api/v1"
 # === Статистика ===
 post_count = 0
 last_post_time = None
-posted_messages = {}  # Словарь для хранения ID опубликованных постов
 
 # === Генерация текста поста ===
 def generate_post():
@@ -70,7 +69,7 @@ def generate_image():
     try:
         response = requests.get(url)
         data = response.json()
-        image_url = data[0]["urls"]["regular"]
+        image_url = data["urls"]["regular"]
         logger.info(f"Изображение найдено по теме: {query}")
         return image_url
     except Exception as e:
@@ -85,29 +84,25 @@ def post_to_channel():
     try:
         text = generate_post()
         image_url = generate_image()
-        sent_message = bot.send_photo(chat_id=CHANNEL_ID, photo=image_url, caption=text)
+        bot.send_photo(chat_id=CHANNEL_ID, photo=image_url, caption=text)
         
         post_count += 1
         last_post_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Сохраняем ID опубликованного поста для последующего удаления
-        posted_messages[sent_message.message_id] = datetime.now()
-        
         logger.info(f"Пост опубликован. Всего сегодня: {post_count}")
     except Exception as e:
         logger.error(f"Ошибка при публикации поста: {e}")
 
-# === Удаление поста по ID ===
-def delete_post(post_id: int):
-    if post_id in posted_messages:
-        try:
-            bot.delete_message(chat_id=CHANNEL_ID, message_id=post_id)
-            del posted_messages[post_id]
-            logger.info(f"Пост с ID {post_id} был удалён.")
-        except Exception as e:
-            logger.error(f"Ошибка при удалении поста с ID {post_id}: {e}")
-    else:
-        logger.warning(f"Пост с ID {post_id} не найден.")
+# === Функция для отправки ежедневного отчёта ===
+def send_daily_report():
+    if MY_USER_ID:
+        report_text = f"📋 Отчёт за сегодня:\nПостов опубликовано: {post_count}"
+        if last_post_time:
+            report_text += f"\nПоследний пост: {last_post_time}"
+        else:
+            report_text += f"\nПосты сегодня ещё не публиковались."
+        
+        bot.send_message(chat_id=MY_USER_ID, text=report_text)
+        logger.info(f"Отправлен ежедневный отчёт пользователю {MY_USER_ID}")
 
 # === Команды Telegram ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,30 +138,6 @@ async def create_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_photo(photo=image_url, caption=text)
     logger.info("Пост создан вручную")
 
-# === Удаление поста по ID ===
-async def delete_post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
-        await update.message.reply_text("У тебя нет доступа.")
-        logger.warning("Неавторизованный доступ к /deletepost")
-        return
-    
-    if context.args:
-        try:
-            post_id = int(context.args[0])
-            delete_post(post_id)
-            await update.message.reply_text(f"Пост с ID {post_id} был удалён.")
-        except ValueError:
-            await update.message.reply_text("Введите правильный ID поста.")
-    else:
-        await update.message.reply_text("Укажите ID поста для удаления.")
-
-# === Функция для удаления старых постов ===
-def auto_delete_old_posts():
-    now = datetime.now()
-    for post_id, post_time in list(posted_messages.items()):
-        if now - post_time > timedelta(days=1):  # Удаляем посты старше 24 часов
-            delete_post(post_id)
-
 # === Асинхронный планировщик ===
 async def run_schedule():
     while True:
@@ -174,14 +145,12 @@ async def run_schedule():
         await asyncio.sleep(1)
 
 # === Основной запуск ===
-async def main():
+def main():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # Обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("report", report))
     application.add_handler(CommandHandler("createpost", create_post))
-    application.add_handler(CommandHandler("deletepost", delete_post_command))  # Добавляем команду /deletepost
 
     # Расписание постов
     schedule.every().day.at("09:00").do(post_to_channel)
@@ -193,11 +162,11 @@ async def main():
     # Расписание для отправки ежедневного отчёта
     schedule.every().day.at("22:00").do(send_daily_report)
 
-    # Расписание для удаления старых постов (посты старше 24 часов)
-    schedule.every().hour.do(auto_delete_old_posts)
+    async def run():
+        asyncio.create_task(run_schedule())
+        await application.run_polling()
 
-    # Асинхронный запуск
-    await asyncio.gather(application.run_polling(), run_schedule())
+    asyncio.run(run())
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

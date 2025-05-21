@@ -35,7 +35,7 @@ if not UNSPLASH_ACCESS_KEY:
 bot = Bot(token=TELEGRAM_TOKEN)
 
 # === Только ты можешь управлять ботом ===
-MY_USER_ID = 123456789  # ← ЗАМЕНИ на свой Telegram ID!
+MY_USER_ID = 375047802  # ← Заменить на свой Telegram ID
 
 def is_authorized(update: Update) -> bool:
     return update.effective_user and update.effective_user.id == MY_USER_ID
@@ -69,7 +69,7 @@ def generate_image():
     try:
         response = requests.get(url)
         data = response.json()
-        image_url = data["urls"]["regular"]
+        image_url = data[0]["urls"]["regular"]
         logger.info(f"Изображение найдено по теме: {query}")
         return image_url
     except Exception as e:
@@ -126,6 +126,57 @@ async def create_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_photo(photo=image_url, caption=text)
     logger.info("Пост создан вручную")
 
+# === Команды админ-панели ===
+
+# Команда /admin — информация о боте
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
+        await update.message.reply_text("У тебя нет доступа.")
+        logger.warning("Неавторизованный доступ к /admin")
+        return
+
+    admin_text = "🔧 Админ-панель:\n\n"
+    admin_text += f"📊 Статистика:\nПостов сегодня: {post_count}\n"
+    if last_post_time:
+        admin_text += f"Последний пост: {last_post_time}"
+    else:
+        admin_text += "Посты сегодня ещё не публиковались."
+
+    admin_text += "\n🎬 Доступные команды:\n"
+    admin_text += "/createpostadmin - Ручной пост\n"
+    admin_text += "/stats - Статистика бота"
+
+    await update.message.reply_text(admin_text)
+    logger.info("Отправлена админская информация /admin")
+
+# Команда /createpostadmin — создание поста вручную
+async def create_post_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
+        await update.message.reply_text("У тебя нет доступа.")
+        logger.warning("Неавторизованный доступ к /createpostadmin")
+        return
+
+    text = generate_post()
+    image_url = generate_image()
+    await update.message.reply_photo(photo=image_url, caption=text)
+    logger.info("Пост создан вручную через админ-панель")
+
+# Команда /stats — статистика бота
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
+        await update.message.reply_text("У тебя нет доступа.")
+        logger.warning("Неавторизованный доступ к /stats")
+        return
+
+    stats_text = f"📊 Статистика за сегодня:\nПостов опубликовано: {post_count}\n"
+    if last_post_time:
+        stats_text += f"Последний пост: {last_post_time}"
+    else:
+        stats_text += "Посты сегодня ещё не публиковались."
+
+    await update.message.reply_text(stats_text)
+    logger.info("Отправлена статистика /stats")
+
 # === Функция для отправки ежедневного отчёта ===
 def send_daily_report():
     if MY_USER_ID:
@@ -148,9 +199,13 @@ async def run_schedule():
 def main():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
+    # Обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("report", report))
     application.add_handler(CommandHandler("createpost", create_post))
+    application.add_handler(CommandHandler("admin", admin))  # Добавляем команду /admin
+    application.add_handler(CommandHandler("createpostadmin", create_post_admin))  # Добавляем команду /createpostadmin
+    application.add_handler(CommandHandler("stats", stats))  # Добавляем команду /stats
 
     # Расписание постов
     schedule.every().day.at("09:00").do(post_to_channel)

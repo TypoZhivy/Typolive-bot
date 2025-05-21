@@ -69,7 +69,7 @@ def generate_image():
     try:
         response = requests.get(url)
         data = response.json()
-        image_url = data["urls"]["regular"]
+        image_url = data[0]["urls"]["regular"]
         logger.info(f"Изображение найдено по теме: {query}")
         return image_url
     except Exception as e:
@@ -145,9 +145,11 @@ async def run_schedule():
         await asyncio.sleep(1)
 
 # === Основной запуск ===
-def main():
+async def main():
+    # Создаем экземпляр приложения
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
+    # Добавляем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("report", report))
     application.add_handler(CommandHandler("createpost", create_post))
@@ -162,11 +164,11 @@ def main():
     # Расписание для отправки ежедневного отчёта
     schedule.every().day.at("22:00").do(send_daily_report)
 
-    async def run():
-        asyncio.create_task(run_schedule())
-        await application.run_polling()
-
-    asyncio.run(run())
+    # Запускаем планировщик и бота
+    await asyncio.gather(
+        application.run_polling(),
+        run_schedule()
+    )
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

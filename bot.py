@@ -110,6 +110,40 @@ async def run_schedule():
         schedule.run_pending()
         await asyncio.sleep(1)
 
+# === Команды Telegram ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
+        await update.message.reply_text("У тебя нет доступа.")
+        logger.warning("Неавторизованный доступ к /start")
+        return
+    await update.message.reply_text("Бот работает. Используй /report или /createpost.")
+    logger.info("Пользователь вызвал /start")
+
+async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
+        await update.message.reply_text("У тебя нет доступа.")
+        logger.warning("Неавторизованный доступ к /report")
+        return
+
+    report_text = f"📊 Статистика:\nПостов сегодня: {post_count}"
+    if last_post_time:
+        report_text += f"\nПоследний пост: {last_post_time}"
+    else:
+        report_text += f"\nПосты сегодня ещё не публиковались."
+
+    await update.message.reply_text(report_text)
+    logger.info("Отправлен отчёт /report")
+
+async def create_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
+        await update.message.reply_text("У тебя нет доступа.")
+        logger.warning("Неавторизованный доступ к /createpost")
+        return
+    text = generate_post()
+    image_url = generate_image()
+    await update.message.reply_photo(photo=image_url, caption=text)
+    logger.info("Пост создан вручную")
+
 # === Основной запуск ===
 async def main():
     # Создаем экземпляр приложения

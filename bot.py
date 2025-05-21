@@ -28,7 +28,7 @@ openai.api_base = "https://openrouter.ai/api/v1"
 bot = Bot(token=TELEGRAM_TOKEN)
 
 # === Укажи свой Telegram user ID ===
-MY_USER_ID = highzauberer  # ← ВСТАВЬ СЮДА СВОЙ ID!
+MY_USER_ID = 375047802  # ← ВСТАВЬ СЮДА СВОЙ ID!
 
 def is_authorized(update: Update) -> bool:
     return update.effective_user and update.effective_user.id == MY_USER_ID

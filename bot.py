@@ -7,8 +7,8 @@ import time
 from datetime import datetime
 
 TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("@typozhivy")
-OPENAI_API_KEY = os.getenv("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")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai.api_key = OPENAI_API_KEY
 openai.api_base = "https://openrouter.ai/api/v1"

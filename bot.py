@@ -3,7 +3,7 @@ import openai
 import logging
 import requests
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import schedule
@@ -47,6 +47,7 @@ openai.api_base = "https://openrouter.ai/api/v1"
 # === Статистика ===
 post_count = 0
 last_post_time = None
+posted_messages = {}  # Словарь для хранения ID опубликованных постов
 
 # === Генерация текста поста ===
 def generate_post():
@@ -84,13 +85,29 @@ def post_to_channel():
     try:
         text = generate_post()
         image_url = generate_image()
-        bot.send_photo(chat_id=CHANNEL_ID, photo=image_url, caption=text)
+        sent_message = bot.send_photo(chat_id=CHANNEL_ID, photo=image_url, caption=text)
         
         post_count += 1
         last_post_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Сохраняем ID опубликованного поста для последующего удаления
+        posted_messages[sent_message.message_id] = datetime.now()
+        
         logger.info(f"Пост опубликован. Всего сегодня: {post_count}")
     except Exception as e:
         logger.error(f"Ошибка при публикации поста: {e}")
+
+# === Удаление поста по ID ===
+def delete_post(post_id: int):
+    if post_id in posted_messages:
+        try:
+            bot.delete_message(chat_id=CHANNEL_ID, message_id=post_id)
+            del posted_messages[post_id]
+            logger.info(f"Пост с ID {post_id} был удалён.")
+        except Exception as e:
+            logger.error(f"Ошибка при удалении поста с ID {post_id}: {e}")
+    else:
+        logger.warning(f"Пост с ID {post_id} не найден.")
 
 # === Команды Telegram ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -126,68 +143,29 @@ async def create_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_photo(photo=image_url, caption=text)
     logger.info("Пост создан вручную")
 
-# === Команды админ-панели ===
-
-# Команда /admin — информация о боте
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# === Удаление поста по ID ===
+async def delete_post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         await update.message.reply_text("У тебя нет доступа.")
-        logger.warning("Неавторизованный доступ к /admin")
+        logger.warning("Неавторизованный доступ к /deletepost")
         return
-
-    admin_text = "🔧 Админ-панель:\n\n"
-    admin_text += f"📊 Статистика:\nПостов сегодня: {post_count}\n"
-    if last_post_time:
-        admin_text += f"Последний пост: {last_post_time}"
+    
+    if context.args:
+        try:
+            post_id = int(context.args[0])
+            delete_post(post_id)
+            await update.message.reply_text(f"Пост с ID {post_id} был удалён.")
+        except ValueError:
+            await update.message.reply_text("Введите правильный ID поста.")
     else:
-        admin_text += "Посты сегодня ещё не публиковались."
+        await update.message.reply_text("Укажите ID поста для удаления.")
 
-    admin_text += "\n🎬 Доступные команды:\n"
-    admin_text += "/createpostadmin - Ручной пост\n"
-    admin_text += "/stats - Статистика бота"
-
-    await update.message.reply_text(admin_text)
-    logger.info("Отправлена админская информация /admin")
-
-# Команда /createpostadmin — создание поста вручную
-async def create_post_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
-        await update.message.reply_text("У тебя нет доступа.")
-        logger.warning("Неавторизованный доступ к /createpostadmin")
-        return
-
-    text = generate_post()
-    image_url = generate_image()
-    await update.message.reply_photo(photo=image_url, caption=text)
-    logger.info("Пост создан вручную через админ-панель")
-
-# Команда /stats — статистика бота
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
-        await update.message.reply_text("У тебя нет доступа.")
-        logger.warning("Неавторизованный доступ к /stats")
-        return
-
-    stats_text = f"📊 Статистика за сегодня:\nПостов опубликовано: {post_count}\n"
-    if last_post_time:
-        stats_text += f"Последний пост: {last_post_time}"
-    else:
-        stats_text += "Посты сегодня ещё не публиковались."
-
-    await update.message.reply_text(stats_text)
-    logger.info("Отправлена статистика /stats")
-
-# === Функция для отправки ежедневного отчёта ===
-def send_daily_report():
-    if MY_USER_ID:
-        report_text = f"📋 Отчёт за сегодня:\nПостов опубликовано: {post_count}"
-        if last_post_time:
-            report_text += f"\nПоследний пост: {last_post_time}"
-        else:
-            report_text += f"\nПосты сегодня ещё не публиковались."
-        
-        bot.send_message(chat_id=MY_USER_ID, text=report_text)
-        logger.info(f"Отправлен ежедневный отчёт пользователю {MY_USER_ID}")
+# === Функция для удаления старых постов ===
+def auto_delete_old_posts():
+    now = datetime.now()
+    for post_id, post_time in list(posted_messages.items()):
+        if now - post_time > timedelta(days=1):  # Удаляем посты старше 24 часов
+            delete_post(post_id)
 
 # === Асинхронный планировщик ===
 async def run_schedule():
@@ -203,9 +181,7 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("report", report))
     application.add_handler(CommandHandler("createpost", create_post))
-    application.add_handler(CommandHandler("admin", admin))  # Добавляем команду /admin
-    application.add_handler(CommandHandler("createpostadmin", create_post_admin))  # Добавляем команду /createpostadmin
-    application.add_handler(CommandHandler("stats", stats))  # Добавляем команду /stats
+    application.add_handler(CommandHandler("deletepost", delete_post_command))  # Добавляем команду /deletepost
 
     # Расписание постов
     schedule.every().day.at("09:00").do(post_to_channel)
@@ -216,6 +192,9 @@ async def main():
 
     # Расписание для отправки ежедневного отчёта
     schedule.every().day.at("22:00").do(send_daily_report)
+
+    # Расписание для удаления старых постов (посты старше 24 часов)
+    schedule.every().hour.do(auto_delete_old_posts)
 
     # Асинхронный запуск
     await asyncio.gather(application.run_polling(), run_schedule())

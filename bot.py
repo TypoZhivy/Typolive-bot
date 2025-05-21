@@ -3,6 +3,7 @@ import openai
 import logging
 import requests
 import random
+from datetime import datetime
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import schedule
@@ -34,7 +35,7 @@ if not UNSPLASH_ACCESS_KEY:
 bot = Bot(token=TELEGRAM_TOKEN)
 
 # === Только ты можешь управлять ботом ===
-MY_USER_ID = 375047802  # ← ВСТАВЬ СЮДА СВОЙ Telegram ID
+MY_USER_ID = 123456789  # ← ЗАМЕНИ на свой Telegram ID!
 
 def is_authorized(update: Update) -> bool:
     return update.effective_user and update.effective_user.id == MY_USER_ID
@@ -42,6 +43,10 @@ def is_authorized(update: Update) -> bool:
 # === OpenAI (OpenRouter) ===
 openai.api_key = OPENAI_API_KEY
 openai.api_base = "https://openrouter.ai/api/v1"
+
+# === Статистика ===
+post_count = 0
+last_post_time = None
 
 # === Генерация текста поста ===
 def generate_post():
@@ -73,11 +78,19 @@ def generate_image():
 
 # === Публикация в канал ===
 def post_to_channel():
+    global post_count, last_post_time
     logger.info("Начинаю постинг в канал")
-    text = generate_post()
-    image_url = generate_image()
-    bot.send_photo(chat_id=CHANNEL_ID, photo=image_url, caption=text)
-    logger.info("Пост опубликован")
+    
+    try:
+        text = generate_post()
+        image_url = generate_image()
+        bot.send_photo(chat_id=CHANNEL_ID, photo=image_url, caption=text)
+        
+        post_count += 1
+        last_post_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"Пост опубликован. Всего сегодня: {post_count}")
+    except Exception as e:
+        logger.error(f"Ошибка при публикации поста: {e}")
 
 # === Команды Telegram ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -93,8 +106,15 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("У тебя нет доступа.")
         logger.warning("Неавторизованный доступ к /report")
         return
-    await update.message.reply_text("Постов опубликовано: пока не считаем 😅")
-    logger.info("Вызвана команда /report")
+
+    report_text = f"📊 Статистика:\nПостов сегодня: {post_count}"
+    if last_post_time:
+        report_text += f"\nПоследний пост: {last_post_time}"
+    else:
+        report_text += f"\nПосты сегодня ещё не публиковались."
+
+    await update.message.reply_text(report_text)
+    logger.info("Отправлен отчёт /report")
 
 async def create_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
@@ -105,6 +125,18 @@ async def create_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     image_url = generate_image()
     await update.message.reply_photo(photo=image_url, caption=text)
     logger.info("Пост создан вручную")
+
+# === Функция для отправки ежедневного отчёта ===
+def send_daily_report():
+    if MY_USER_ID:
+        report_text = f"📋 Отчёт за сегодня:\nПостов опубликовано: {post_count}"
+        if last_post_time:
+            report_text += f"\nПоследний пост: {last_post_time}"
+        else:
+            report_text += f"\nПосты сегодня ещё не публиковались."
+        
+        bot.send_message(chat_id=MY_USER_ID, text=report_text)
+        logger.info(f"Отправлен ежедневный отчёт пользователю {MY_USER_ID}")
 
 # === Асинхронный планировщик ===
 async def run_schedule():
@@ -126,6 +158,9 @@ def main():
     schedule.every().day.at("15:00").do(post_to_channel)
     schedule.every().day.at("18:00").do(post_to_channel)
     schedule.every().day.at("21:00").do(post_to_channel)
+
+    # Расписание для отправки ежедневного отчёта
+    schedule.every().day.at("22:00").do(send_daily_report)
 
     async def run():
         asyncio.create_task(run_schedule())

@@ -40,7 +40,7 @@ MY_USER_ID = 375047802  # ← ЗАМЕНИ на свой Telegram ID!
 def is_authorized(update: Update) -> bool:
     return update.effective_user and update.effective_user.id == MY_USER_ID
 
-# === OpenAI (OpenRouter) ===
+# === OpenAI ===
 openai.api_key = OPENAI_API_KEY
 openai.api_base = "https://openrouter.ai/api/v1"
 
@@ -104,40 +104,6 @@ def send_daily_report():
         bot.send_message(chat_id=MY_USER_ID, text=report_text)
         logger.info(f"Отправлен ежедневный отчёт пользователю {MY_USER_ID}")
 
-# === Команды Telegram ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
-        await update.message.reply_text("У тебя нет доступа.")
-        logger.warning("Неавторизованный доступ к /start")
-        return
-    await update.message.reply_text("Бот работает. Используй /report или /createpost.")
-    logger.info("Пользователь вызвал /start")
-
-async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
-        await update.message.reply_text("У тебя нет доступа.")
-        logger.warning("Неавторизованный доступ к /report")
-        return
-
-    report_text = f"📊 Статистика:\nПостов сегодня: {post_count}"
-    if last_post_time:
-        report_text += f"\nПоследний пост: {last_post_time}"
-    else:
-        report_text += f"\nПосты сегодня ещё не публиковались."
-
-    await update.message.reply_text(report_text)
-    logger.info("Отправлен отчёт /report")
-
-async def create_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
-        await update.message.reply_text("У тебя нет доступа.")
-        logger.warning("Неавторизованный доступ к /createpost")
-        return
-    text = generate_post()
-    image_url = generate_image()
-    await update.message.reply_photo(photo=image_url, caption=text)
-    logger.info("Пост создан вручную")
-
 # === Асинхронный планировщик ===
 async def run_schedule():
     while True:
@@ -171,8 +137,4 @@ async def main():
     )
 
 if __name__ == "__main__":
-    import sys
-    if sys.version_info < (3, 7):
-        print("Python version must be >= 3.7")
-        sys.exit(1)
     asyncio.run(main())

@@ -65,11 +65,11 @@ def generate_image():
     keywords = ["tired", "anxiety", "life", "sadness", "urban"]
     query = random.choice(keywords)
     url = f"https://api.unsplash.com/photos/random?query={query}&client_id={UNSPLASH_ACCESS_KEY}"
-    
+
     try:
         response = requests.get(url)
         data = response.json()
-        image_url = data[0]["urls"]["regular"]
+        image_url = data["urls"]["regular"]
         logger.info(f"Изображение найдено по теме: {query}")
         return image_url
     except Exception as e:
@@ -80,12 +80,12 @@ def generate_image():
 def post_to_channel():
     global post_count, last_post_time
     logger.info("Начинаю постинг в канал")
-    
+
     try:
         text = generate_post()
         image_url = generate_image()
         bot.send_photo(chat_id=CHANNEL_ID, photo=image_url, caption=text)
-        
+
         post_count += 1
         last_post_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(f"Пост опубликован. Всего сегодня: {post_count}")
@@ -100,7 +100,7 @@ def send_daily_report():
             report_text += f"\nПоследний пост: {last_post_time}"
         else:
             report_text += f"\nПосты сегодня ещё не публиковались."
-        
+
         bot.send_message(chat_id=MY_USER_ID, text=report_text)
         logger.info(f"Отправлен ежедневный отчёт пользователю {MY_USER_ID}")
 
@@ -145,30 +145,25 @@ async def run_schedule():
         await asyncio.sleep(1)
 
 # === Основной запуск ===
-async def main():
-    # Создаем экземпляр приложения
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-
-    # Добавляем обработчики команд
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("report", report))
-    application.add_handler(CommandHandler("createpost", create_post))
-
-    # Расписание постов
-    schedule.every().day.at("09:00").do(post_to_channel)
-    schedule.every().day.at("12:00").do(post_to_channel)
-    schedule.every().day.at("15:00").do(post_to_channel)
-    schedule.every().day.at("18:00").do(post_to_channel)
-    schedule.every().day.at("21:00").do(post_to_channel)
-
-    # Расписание для отправки ежедневного отчёта
-    schedule.every().day.at("22:00").do(send_daily_report)
-
-    # Запускаем планировщик и бота
-    await asyncio.gather(
-        application.run_polling(),
-        run_schedule()
-    )
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    from telegram.ext import ApplicationBuilder
+
+    async def run():
+        application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("report", report))
+        application.add_handler(CommandHandler("createpost", create_post))
+
+        # Планирование постов
+        schedule.every().day.at("09:00").do(post_to_channel)
+        schedule.every().day.at("12:00").do(post_to_channel)
+        schedule.every().day.at("15:00").do(post_to_channel)
+        schedule.every().day.at("18:00").do(post_to_channel)
+        schedule.every().day.at("21:00").do(post_to_channel)
+        schedule.every().day.at("22:00").do(send_daily_report)
+
+        asyncio.create_task(run_schedule())
+        await application.run_polling()
+
+    asyncio.run(run())

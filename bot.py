@@ -165,14 +165,11 @@ async def main():
     schedule.every().day.at("22:00").do(send_daily_report)
 
     # Запускаем планировщик и бота
-    try:
-        await asyncio.gather(
-            application.run_polling(),
-            run_schedule()
-        )
-    except asyncio.CancelledError:
-        pass
+    await asyncio.gather(
+        application.run_polling(),
+        run_schedule()
+    )
 
 if __name__ == "__main__":
-    # Запуск main() с использованием asyncio.run(), чтобы избежать конфликтов с текущим event loop
-    asyncio.run(main())
+    # Важно: здесь мы не используем asyncio.run() в случае, если event loop уже работает
+    asyncio.get_event_loop().run_until_complete(main())
